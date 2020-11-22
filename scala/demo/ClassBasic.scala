@@ -1,3 +1,5 @@
+package demo
+
 import java.io._
 
 class Point(val xc: Int, val yc: Int) {

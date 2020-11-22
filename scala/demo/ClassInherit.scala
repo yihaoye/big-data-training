@@ -1,3 +1,5 @@
+package demo
+
 import java.io._
 
 class Point(val xc: Int, val yc: Int) {
@@ -12,8 +14,7 @@ class Point(val xc: Int, val yc: Int) {
    }
 }
 
-class Location(override val xc: Int, override val yc: Int,
-   val zc :Int) extends Point(xc, yc){
+class Location(override val xc: Int, override val yc: Int, val zc :Int) extends Point(xc, yc) {
    var z: Int = zc
 
    def move(dx: Int, dy: Int, dz: Int) {
