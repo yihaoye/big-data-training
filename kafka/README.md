@@ -9,6 +9,7 @@ Kafka 基于事件（Event）概念。
   
 ### Partitioning
 由于经济、系统设计的原因（比如单个 Topic 数据量太大，但是企业想省钱继而希望使用多个小节点而不是一个大节点），Partitioning - 把单个 Topic 的 Log 分割成多个 Log（Partition），它们可以被分布分配在 Kafka 集群的一个个独立的节点上。当新消息 Message 来临时，应该写入哪个 Partition 有多种算法选择，比如 Round Robin（消息没 Key）、哈希后对 Partition 总数取余（消息有 Key）等等，这些方法总是能保证单个 Partition 上该 Topic 的 Message 总是按写入顺序排序的（单个 Partition 上不一定顺序紧密相连因为中间的可能分布到其他 Partition，但是单个 Partition 上的总是单调顺序的比如 1、3、5）。  
+每个主题（Topic）的消息有不同的分区，这样一方面消息的存储就不会受到单一服务器存储空间大小的限制，另一方面消息的处理也可以在多个服务器上并行。  
   
 ### Brokers
 Broker 即一个运行 Kafka broker 进程的机器 - 可以是服务器、计算机、实例或虚拟化容器。  
@@ -26,5 +27,23 @@ Broker 设计简单所以容易 scale。
 即读取操作，通过 Kafka Consumer 库就可以进行（如 Kafka Producer 一样使用前进行正确配置即可）。  
 然后让该 Kafka Consumer 对象 subscribe（订阅）Topic 即可（然后每次调用对象的 poll 方法得到、返回一个 ConsumerRecord，从 Partition 中读取的 Message 总是顺序的）。  
 Consumer 相对 Producer 比较复杂（Producer 们一股脑往 Kafka 上写入即可）。Consumer 读完一个消息后并不会像其他消息队列将其删除，相反，消息（Event Log）仍然存在，因为可能有多个 Consumer 订阅同一个 Topic（同理也可能有多个 Producer 写入同一个 Topic）。  
-Kafka 允许 scale up 某个 Consumer（即该 Consumer 的多个复制实例，Kafka 会自动识别且负载均衡给每个实例合理分配 Partition（该 Consumer 若只有单个实例，则该实例总是被分配全部 Partition 读取所有这些 Partition 上的 Message），且这种情况下，读取 Message 仍是有序保证的），其意义是因为实际中，可能需要对某个应用的对某 Topic 的消费速率有要求、同时又要考虑处理单个消息的经济成本，这样该应用的单个实例就可能无法达到消费速率要求（可以 vertical scaling 即加硬件资源如内存、CPU，但是这就违反了处理单个消息的经济成本要求），因此需要前述的 horizontal scaling 解决问题。可以称为 Scaling Consumer Group，因为它们共享同一个 Group ID 且是必须设置的，如果该 Consumer 的实例数量高于 Topic 的 Partition 数量，则多出来的 Consumer 是冗余得不到分配的。  
-
+Kafka 允许 scale up 某个 Consumer（即该 Consumer 的多个复制实例，Kafka 会自动识别且均衡给每个实例合理再分配 Partition（该 Consumer 若只有单个实例，则该实例总是被分配全部 Partition 读取所有这些 Partition 上的 Message），且这种情况下，读取 Message 仍是有序保证的），其意义是因为实际中，可能需要对某个应用的对某 Topic 的消费速率有要求、同时又要考虑处理单个消息的经济成本，这样该应用的单个实例就可能无法达到消费速率要求（可以 vertical scaling 即加硬件资源如内存、CPU，但是这就违反了处理单个消息的经济成本要求），因此需要前述的 horizontal scaling 解决问题。可以称为 Scaling Consumer Group，因为它们共享同一个 Group ID 且是必须设置的，如果该 Consumer 的实例数量高于 Topic 的 Partition 数量，则多出来的 Consumer 是冗余得不到分配的。  
+Consumer Group 的概念，每个分区 Partition 只能被同一个 Group 的一个 Consumer 消费，但可以被多个 Group 消费。  
+  
+### Ecosystem
+实际工作中，有许多重复的工作、功能或逻辑，相比自己写这些与业务逻辑不直接相关的基础设施、内部工具、库、框架、轮子、common layer of application functionality，Kafka 通过其社区提供了 Ecosystem 来更好地减轻这些负担。  
+这些 Ecosystem（Kafka 架构组件，均可在 Confluent Hub 找到）包括但不限于：  
+* Kafka Connect - Kafka Integration Connect API & Data Integration Connector (e.g. sync kafka message to elasticsearch or cloud blob storage automatically connector)
+  * Source Connector act as Producer (that is how kafka cluster consider it)
+  * [Sink](https://en.wikipedia.org/wiki/Sink_(computing)) Connector act as Consumer (that is how kafka cluster consider it)
+* Schema Registry - format of message (schema) evolve with the business, e.g. new field of a domain object
+  * It is a standalone server process external to broker, and it is mainly about maintain/store those schemas which allow Producer/Consumer to call its API to predict whether the about-to-be-produced-or-consumed message is compatible with previous versions (otherwise will fail it before produce/consume to prevent runtime failure).
+  * Support format: JSON Schema, Avro, Protocol Buffers
+* Kafka Streams - consumer always grow/evolve more complex e.g. aggregation or enrichment which is stateful
+  * Stream API - i.e. The Funtional Java API Library (filtering, grouping, aggregating, joining etc) run in context of your application. It is shared stream processing workload, Kafka Streams prevents state from going down with your stream processing application (consumer group) when that occurs, because it persists the state.
+* ksqlDB - database severs run in another cluster (adjacent to kafka cluster)
+  * A similar tool/replacement for Kafka Streams if need it
+  * Provide REST API / Lib / Command Line to call, able to be hosted by docker container etc
+  * It is a new event streaming database optimized for building stream processing applications in which queries are defined in SQL. It performs continuous processing of event streams and exposes the results to applications like a database.
+  * Can Integrate with Kafka Connect
+  
