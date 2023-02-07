@@ -2,6 +2,8 @@
   
 ## Introduction
 Kafka 基于事件（Event）概念。  
+![](./Kafka%20Architecture%201.png)  
+![](./Kafka%20Architecture%202.webp)  
   
 ## Topic
 每个 Event 都归属于某个 Topic（同类 Event 的容器，就如关系数据库的 Table 概念），单个 Event 也可以同时归属于多个 Topic。  
