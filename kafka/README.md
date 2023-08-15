@@ -54,5 +54,21 @@ Consumer Group 的概念，每个分区 Partition 只能被同一个 Group 的�
   * It is a new event streaming database optimized for building stream processing applications in which queries are defined in SQL. It performs continuous processing of event streams and exposes the results to applications like a database.
   * Can Integrate with Kafka Connect
   
+## Kafka 设置
+可以设置为严格保证写入顺序，但是会牺牲一点性能，所以要注意使用场景来选择适用的设置。  
+
+针对消息有序的业务需求，还分为全局有序和局部有序。
+* 全局有序：一个Topic下的所有消息都需要按照生产顺序消费。
+* 局部有序：一个Topic下的消息，只需要满足同一业务字段的要按照生产顺序消费。例如：Topic消息是订单的流水表，包含订单orderId，业务要求同一个orderId的消息需要按照生产顺序进行消费。
+
+全局有序  
+由于 Kafka 的一个 Topic 可以分为了多个 Partition，Producer 发送消息的时候，是分散在不同 Partition 的。当 Producer 按顺序发消息给 Broker，但进入 Kafka 之后，这些消息就不一定进到哪个 Partition，会导致顺序是乱的。  
+因此要满足全局有序，需要 1 个 Topic 只能对应 1 个 Partition。而且对应的 consumer 也要使用单线程或者保证消费顺序的线程模型，否则会出现消费端造成的消费乱序。  
+
+局部有序  
+要满足局部有序，只需要在发消息的时候指定 Partition Key，Kafka 对其进行 Hash计算，根据计算结果决定放入哪个 Partition。这样 Partition Key 相同的消息会放在同一个 Partition。此时，Partition 的数量仍然可以设置多个，提升 Topic 的整体吞吐量。  
+
+以上参考：https://cloud.tencent.com/developer/article/1839597  
+
 # Spring Boot Kafka 项目实例
 [Spring Boot Kafka 项目实例](https://github.com/yihaoye/spring-framework-example/tree/master/spring-boot-kafka)  
