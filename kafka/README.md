@@ -78,6 +78,9 @@ Kafka 会自动识别且均衡给每个消费者实例合理再分配 Partition�
 
 另外，可以新增一个消费者的群组 G2，该群组的消费者可以订阅相同主题上的消息，与群组 G1 之间互不影响、争抢（即尽管订阅相同，G1 会接收到全部的消息，G2 也会接收到全部的消息）。  
 
+### 独立消费者 — 使用没有群组的消费者
+可能只需要一个消费者从一个主题的所有分区或者某个特定的分区读取数据。这个时候就不需要消费者群组和再均衡了，只需要把主题或者分区分配给消费者，然后开始读取消息并提交偏移量。如果是这样的话，就不需要订阅主题，取而代之的是为自己分配分区。一个消费者可以订阅主题（并加入消费者群组），或者为自己分配分区，但不能同时做这两件事情。  
+
 ### 消费者群组和分区再均衡
 群组里的消费者共同读取主题的分区。一个新的消费者加入群组时，它读取的是原本由其他消费者读取的消息。当一个消费者被关闭或发生崩溃时，它就离开群组，原本由它读取的分区将由群组里的其他消费者来读取。在主题发生变化时，比如管理员添加了新的分区，会发生分区重分配。  
 **分区的所有权从一个消费者转移到另一个消费者，这样的行为被称为再均衡。**  
@@ -147,10 +150,14 @@ while (true) {
 }
 ```
 
-## 再均衡监听器
+### 再均衡监听器
 在为消费者分配新分区或移除旧分区时，可以通过消费者 API 执行一些应用程序代码，在调用 subscribe() 方法时传进去一个实现了 ConsumerRebalanceListener 接口的类对象就可以了。 ConsumerRebalanceListener 有两个需要实现的方法。
 1. `public void onPartitionsRevoked(Collection<TopicPartition> partitions)` 方法会在再均衡开始之前和消费者停止读取消息之后被调用。如果在这里提交偏移量，下一个接管分区的消费者就知道该从哪里开始读取了。
 2. `public void onPartitionsAssigned(Collection<TopicPartition> partitions)` 方法会在重新分配分区之后和消费者开始读取消息之前被调用。
+
+### 从特定偏移量处开始处理记录
+除了默认使用 poll() 方法从各个分区的最新偏移量处开始处理消息。也可以从分区的起始位置或末尾开始读取消息，可以使用 `seekToBeginning(Collection<TopicPartition> tp)` 和 `seekToEnd(Collection<TopicPartition> tp)` 这两个方法。  
+不过，Kafka 也提供了用于查找特定偏移量的 API：`consumer.seek(partition, offset);`。  
 
 ## 创建 Producer/Consumer
 创建 KafkaConsumer 对象与创建 KafkaProducer 对象非常相似 —— 把想要传给实例的属性放在 Properties 对象里，属性入：bootstrap.servers、key.serializer/key.deserializer、value.serializer/value.deserializer、group.id(consumer only) etc。  
@@ -188,8 +195,8 @@ while (true) {
 
 以上参考：https://cloud.tencent.com/developer/article/1839597  
 
-### 序列化器
-创建一个生产者对象必须指定序列化器。除了使用默认的字符串序列化器，Kafka 还提供了整型和字节数组序列化器，不过它们还不足以满足大部分场景的需求。  
+### 序列化器/反序列化器
+创建一个生产者对象必须指定序列化器（创建消费者则必须指定反序列化器）。除了使用默认的字符串序列化器，Kafka 还提供了整型和字节数组序列化器，不过它们还不足以满足大部分场景的需求。  
 自定义序列化器 - 如果发送到 Kafka 的对象不是简单的字符串或整型，那么可以使用序列化框架来创建消息记录，如 Avro、Thrift 或 Protobuf，或者使用自定义序列化器（但更建议使用前面的框架，因为要保证不同版本的 schema 兼容）。  
 ![](./序列化.png)  
 
@@ -200,6 +207,17 @@ while (true) {
 4. 实例化一个 ProducerRecord 对象，并指定 Customer 为值的类型，然后再传给它一个 Customer 对象。
 5. 把 Customer 对象作为记录发送出去，KafkaAvroSerializer 会处理剩下的事情。
 
+## 集群
+Kafka 使用 Zookeeper etc 来维护集群成员的信息。每个 broker 都有一个唯一标识符，这个标识符可以在配置文件里指定，也可以自动生成。在 broker 启动的时候，它通过创建临时节点把自己的 ID 注册到 Zookeeper。Kafka 组件订阅 Zookeeper 的 /brokers/ids 路径（broker 在 Zookeeper 上的注册路径），当有 broker 加入集群或退出集群时，这些组件就可以获得通知。  
+
+Kafka 使用 Zookeeper 来管理和协调集群中的各种元数据，以及进行领导者选举、分区分配、偏移量存储等关键任务。Zookeeper 在 Kafka 中起到了重要的作用，确保了 Kafka 集群的可靠性和稳定性。具体来说，Kafka 使用 Zookeeper 来实现以下功能：  
+1. **元数据管理：** Kafka 使用 Zookeeper 来管理和存储集群中的元数据，如主题（Topic）、分区（Partition）等的配置和状态信息。
+2. **领导者选举：** 当 Kafka 集群中的一个 Broker 发生故障或宕机时，Zookeeper 会协助进行新的领导者选举，确保数据的可用性和一致性。
+3. **分区分配：** 新增或删除 Broker 时，Zookeeper 协助 Kafka 进行分区的重新分配，以保持负载均衡。
+4. **偏移量存储：** Kafka 使用 Zookeeper 来存储消费者（Consumer）的偏移量（Offset），以跟踪消费进度，确保数据不会被重复消费。
+5. **配置管理：** Kafka 的一些配置信息也会存储在 Zookeeper 中，包括 Broker 的配置、Topic 的配置等。
+
+需要注意的是，尽管 Kafka 目前使用 Zookeeper 来实现这些功能，但在未来的版本中，Kafka 计划逐步减少对 Zookeeper 的依赖，转而使用自己的内部元数据存储系统。这是为了简化 Kafka 的部署和管理，并减少对外部依赖的复杂性。  
 
 # Spring Boot Kafka 项目实例
 [Spring Boot Kafka 项目实例](https://github.com/yihaoye/spring-framework-example/tree/master/spring-boot-kafka)  
