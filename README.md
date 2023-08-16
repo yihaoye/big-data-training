@@ -1,7 +1,7 @@
 # big-data-training
   
-Demo or mini project about big data, basically written in Scala.  
-Demo or mini project about kafka.  
+* [Demo or mini project about big data, basically written in Scala](./scala/)
+* [Demo or mini project about kafka](./README.md)
   
 ## 参考资料
 [Kafka 101 | Apache Kafka® Tutorials for Beginners](https://www.youtube.com/playlist?list=PLa7VYi0yPIH0KbnJQcMv5N9iW8HkZHztH) 已完成  

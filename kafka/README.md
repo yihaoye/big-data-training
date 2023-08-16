@@ -212,7 +212,7 @@ Kafka 使用 Zookeeper etc 来维护集群成员的信息。每个 broker 都有
 
 Kafka 使用 Zookeeper 来管理和协调集群中的各种元数据，以及进行领导者选举、分区分配、偏移量存储等关键任务。Zookeeper 在 Kafka 中起到了重要的作用，确保了 Kafka 集群的可靠性和稳定性。具体来说，Kafka 使用 Zookeeper 来实现以下功能：  
 1. **元数据管理：** Kafka 使用 Zookeeper 来管理和存储集群中的元数据，如主题（Topic）、分区（Partition）等的配置和状态信息。
-2. **领导者选举：** 当 Kafka 集群中的一个 Broker 发生故障或宕机时，Zookeeper 会协助进行新的领导者选举，确保数据的可用性和一致性。
+2. **领导者选举：** 当 Kafka 集群中的一个控制器（某个 Topic 的某个 Partition 的主 Broker）发生故障或宕机时，Zookeeper 会协助进行新的领导者选举，确保数据的可用性和一致性。
 3. **分区分配：** 新增或删除 Broker 时，Zookeeper 协助 Kafka 进行分区的重新分配，以保持负载均衡。
 4. **偏移量存储：** Kafka 使用 Zookeeper 来存储消费者（Consumer）的偏移量（Offset），以跟踪消费进度，确保数据不会被重复消费。
 5. **配置管理：** Kafka 的一些配置信息也会存储在 Zookeeper 中，包括 Broker 的配置、Topic 的配置等。
