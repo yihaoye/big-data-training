@@ -35,6 +35,22 @@ Kafka 权威指南
 ## Producer
 即写入操作，通过轻量级的 Kafka Producer 库就可以进行（使用前进行正确配置即可，包括链接 Kafka 集群上的某几个 broker、安全设置、网络行为等等）。  
 比如在 Java 里，ProducerRecord 即是开发者、程序准备写入的 Key-Value pair（亦即 Event）（写入还包括放置在哪个 Topic）。另外 Partitioning 由 Producer 负责。  
+```java
+import org.apache.kafka.clients.producer.*;
+
+private Properties kafkaProps = new Properties();
+kafkaProps.put("bootstrap.servers", "broker1:9092,broker2:9092");
+kafkaProps.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+kafkaProps.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+Producer<String, String> producer = new KafkaProducer<String, String>(kafkaProps);
+
+ProducerRecord<String, String> record = new ProducerRecord<>("CustomerCountry", "Precision Products", "France");
+try {
+  producer.send(record);
+} catch (Exception e) {
+  e.printStackTrace();
+}
+```
   
 ## Consumer
 应用程序使用 KafkaConsumer 向 Kafka 订阅主题，并从订阅的主题上接收消息。  
@@ -42,6 +58,17 @@ Kafka 权威指南
 即读取操作，通过 Kafka Consumer 库就可以进行（如 Kafka Producer 一样使用前进行正确配置即可）。  
 然后让该 Kafka Consumer 对象 subscribe（订阅）Topic 即可（然后每次调用对象的 poll 方法得到、返回一个 ConsumerRecord，从 Partition 中读取的 Message 总是顺序的）。  
 Consumer 相对 Producer 比较复杂（Producer 们一股脑往 Kafka 上写入即可）。Consumer 读完一个消息后并不会像其他消息队列将其删除，相反，消息（Event Log）仍然存在，因为可能有多个 Consumer（Group）订阅同一个 Topic（同理也可能有多个 Producer 写入同一个 Topic）。  
+```java
+import org.apache.kafka.clients.consumer.*;
+
+Properties props = new Properties();
+props.put("bootstrap.servers", "broker1:9092,broker2:9092");
+props.put("group.id", "XXX");
+props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+
+KafkaConsumer<String, String> consumer = new KafkaConsumer<String, String>(props);
+```
 
 ### 消费者和消费者群组
 假设有一个应用程序需要从一个 Kafka 主题读取消息并验证这些消息，然后再把它们保存起来。应用程序需要创建一个消费者对象，订阅主题并开始接收并处理消息。过了一阵子，生产者往主题写入消息的速度超过了应用程序消费者处理数据的速度，这个时候该怎么办？如果只使用单个消费者处理消息，应用程序会远跟不上消息生成的速度。此时需要对消费者进行横向伸缩。就像多个生产者可以向相同的主题写入消息一样，也可以使用多个消费者从同一个主题读取消息，对消息进行分流。  
@@ -65,22 +92,29 @@ subscribe() 方法接受一个主题列作为参数，使用起来很简单：`c
 ### 轮询
 消息轮询 - 通过一个简单的轮询向服务器请求数据。一旦消费者订阅了主题，轮询就会处理所有的细节，包括群组协调、分区再均衡、发送心跳和获取数据，开发者只需要使用一组简单的 API 来处理从分区返回的数据。消费者代码的主要部分如下所示：  
 ```java
-while (true) {
-  ConsumerRecords<String, String> records = consumer.poll(100);
-  for (ConsumerRecord<String, String> record : records) {
-    log.debug("topic = %s, partition = %s, offset = %d, customer = %s,
-        country = %s\n",
-        record.topic(), record.partition(), record.offset(),
-        record.key(), record.value());
-    // other process ...
+import org.apache.kafka.clients.consumer.*;
+
+try {
+  while (true) {
+    ConsumerRecords<String, String> records = consumer.poll(100);
+    for (ConsumerRecord<String, String> record : records) {
+      log.debug("topic = %s, partition = %s, offset = %d, customer = %s,
+          country = %s\n",
+          record.topic(), record.partition(), record.offset(),
+          record.key(), record.value());
+      // other process ...
+    }
+    consumer.commitAsync(); // 手动异步提交，如果设置了自动提交则不需要这一部分代码逻辑
   }
-  try { // 手动提交，如果设置了自动提交则不需要这一部分代码逻辑
-    consumer.commitSync();
-  } catch (CommitFailedException e) {
-    log.error("commit failed", e);
-  }
+} catch (Exception e) {
+    log.error("Unexpected error", e);
+} finally {
+    try {
+        consumer.commitSync(); // 手动同步步提交，如果设置了自动提交则不需要这一部分代码逻辑
+    } finally {
+        consumer.close();
+    }
 }
-// consumer.close();
 ```  
 
 #### **线程安全**
@@ -91,7 +125,32 @@ while (true) {
 把更新分区当前位置的操作叫作提交。  
 那么消费者是如何提交偏移量的呢？消费者往一个叫作 _consumer_offset 的特殊主题发送消息，消息里包含每个分区的偏移量。如果消费者一直处于运行状态，那么偏移量就没有什么用处。不过，如果消费者发生崩溃或者有新的消费者加入群组，就会触发再均衡，完成再均衡之后，每个消费者可能分配到新的分区，而不是之前处理的那个。为了能够继续之前的工作，消费者需要读取每个分区最后一次提交的偏移量，然后从偏移量指定的地方继续处理。如果提交的偏移量小于客户端处理的最后一个消息的偏移量，那么处于两个偏移量之间的消息就会被重复处理，反之则会被 miss 掉。  
 * 自动提交 - 最简单的提交方式是让消费者自动提交偏移量。如果 enable.auto.commit 被设为 true，那么每过一小段指定时间，消费者会自动把从 poll() 方法接收到的最大偏移量提交上去。
-* 手动提交 - `consumer.commitSync();` 或 `consumer.commitAsync();`（同步、异步 二选一），也可以同步和异步组合提交。
+* 手动提交 - `consumer.commitSync();` 或 `consumer.commitAsync();`（同步、异步 二选一），也可以同步和异步组合提交（如上面示例代码）。
+  * 在成功提交或碰到无法恢复的错误之前，commitSync() 会一直重试，但是 commitAsync() 不会。
+  * 提交特定偏移量 - 如下面代码所示
+```java
+private Map<TopicPartition, OffsetAndMetadata> currentOffsets = new HashMap<>();
+int count = 0;
+// ...
+
+while (true) {
+    ConsumerRecords<String, String> records = consumer.poll(100);
+    for (ConsumerRecord<String, String> record : records) {
+        System.out.printf("topic = %s, partition = %s, offset = %d,
+          customer = %s, country = %s\n",
+          record.topic(), record.partition(), record.offset(),
+          record.key(), record.value());
+        currentOffsets.put(new TopicPartition(record.topic(), record.partition()), new OffsetAndMetadata(record.offset() + 1, "no metadata"));
+        if (count % 1000 == 0) consumer.commitAsync(currentOffsets, null);
+        count++;
+    }
+}
+```
+
+## 再均衡监听器
+在为消费者分配新分区或移除旧分区时，可以通过消费者 API 执行一些应用程序代码，在调用 subscribe() 方法时传进去一个实现了 ConsumerRebalanceListener 接口的类对象就可以了。 ConsumerRebalanceListener 有两个需要实现的方法。
+1. `public void onPartitionsRevoked(Collection<TopicPartition> partitions)` 方法会在再均衡开始之前和消费者停止读取消息之后被调用。如果在这里提交偏移量，下一个接管分区的消费者就知道该从哪里开始读取了。
+2. `public void onPartitionsAssigned(Collection<TopicPartition> partitions)` 方法会在重新分配分区之后和消费者开始读取消息之前被调用。
 
 ## 创建 Producer/Consumer
 创建 KafkaConsumer 对象与创建 KafkaProducer 对象非常相似 —— 把想要传给实例的属性放在 Properties 对象里，属性入：bootstrap.servers、key.serializer/key.deserializer、value.serializer/value.deserializer、group.id(consumer only) etc。  
