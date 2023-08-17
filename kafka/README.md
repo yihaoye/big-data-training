@@ -29,8 +29,13 @@ Kafka 权威指南
 > 一个独立的 Kafka 服务器被称为 broker。broker 接收来自生产者的消息，为消息设置偏移量，并提交消息到磁盘保存。broker 为消费者提供服务，对读取分区的请求作出响应，返回已经提交到磁盘上的消息。根据特定的硬件及其性能特征，单个 broker 可以轻松处理数千个分区以及每秒百万级的消息量。  
 > broker 是集群的组成部分。每个集群都有一个 broker 同时充当了集群控制器的角色（自动从集群的活跃成员中选举出来）。控制器负责管理工作，包括将分区分配给 broker 和监控 broker。在集群中，一个分区从属于一个 broker，该 broker 被称为分区的首领。一个分区可以分配给多个 broker，这个时候会发生分区复制。这种复制机制为分区提供了消息冗余，如果有一个 broker 失效，其他 broker 可以接管领导权。不过，相关的消费者和生产者都要重新连接到新的首领。
   
-## Replication
+## Replication / 复制
 原来是一个 Partition 总是从属于某个 Broker，为了容错该 Broker 的故障可能，就把该 Partition 复制、备份到另外几个 Broker 上，称之为 follower replicas（与数据库 replicas 类似），原 Partition 为 leader replica（负责写入与读取），通常备份会自动进行，如果 leader replica 故障了则会有一个原 follower replica 自动取而代之。  
+
+首领的一个任务是搞清楚哪个跟随者的状态与自己是一致的。跟随者为了保持与首领的状态一致，在有新消息到达时尝试从首领那里复制消息，不过有各种原因会导致同步失败。例如，网络拥塞导致复制变慢，broker 发生崩溃导致复制滞后，直到重启 broker 后复制才会继续。  
+为了与首领保持同步，跟随者向首领发送获取数据的请求，这种请求与消费者为了读取消息而发送的请求是一样的。首领将响应消息发给跟随者。请求消息里包含了跟随者想要获取消息的偏移量，而且这些偏移量总是有序的。  
+
+如果一个副本无法与首领保持一致，在首领发生失效时，它就不可能成为新首领——毕竟它没有包含全部的消息。相反，持续请求得到的最新消息副本被称为同步的副本。在首领发生失效时，只有同步副本才有可能被选为新首领。  
   
 ## Producer
 即写入操作，通过轻量级的 Kafka Producer 库就可以进行（使用前进行正确配置即可，包括链接 Kafka 集群上的某几个 broker、安全设置、网络行为等等）。  
@@ -137,16 +142,14 @@ int count = 0;
 // ...
 
 while (true) {
-    ConsumerRecords<String, String> records = consumer.poll(100);
-    for (ConsumerRecord<String, String> record : records) {
-        System.out.printf("topic = %s, partition = %s, offset = %d,
-          customer = %s, country = %s\n",
-          record.topic(), record.partition(), record.offset(),
-          record.key(), record.value());
-        currentOffsets.put(new TopicPartition(record.topic(), record.partition()), new OffsetAndMetadata(record.offset() + 1, "no metadata"));
-        if (count % 1000 == 0) consumer.commitAsync(currentOffsets, null);
-        count++;
-    }
+  ConsumerRecords<String, String> records = consumer.poll(100);
+  for (ConsumerRecord<String, String> record : records) {
+    System.out.printf("topic = %s, partition = %s, offset = %d, customer = %s, country = %s\n",
+      record.topic(), record.partition(), record.offset(), record.key(), record.value());
+    currentOffsets.put(new TopicPartition(record.topic(), record.partition()), new OffsetAndMetadata(record.offset() + 1, "no metadata"));
+    if (count % 1000 == 0) consumer.commitAsync(currentOffsets, null);
+    count++;
+  }
 }
 ```
 
@@ -158,6 +161,77 @@ while (true) {
 ### 从特定偏移量处开始处理记录
 除了默认使用 poll() 方法从各个分区的最新偏移量处开始处理消息。也可以从分区的起始位置或末尾开始读取消息，可以使用 `seekToBeginning(Collection<TopicPartition> tp)` 和 `seekToEnd(Collection<TopicPartition> tp)` 这两个方法。  
 不过，Kafka 也提供了用于查找特定偏移量的 API：`consumer.seek(partition, offset);`。  
+
+### Kafka 死信队列
+（Kafka Dead Letter Queue，简称 Kafka DLQ）是一种用于处理无法被成功处理的消息的机制。在分布式消息系统中，有时会出现一些情况，导致某些消息无法被消费成功，例如消费者出错、处理逻辑错误等。为了能够有效地处理这些失败的消息，可以使用 Kafka 死信队列来将这些消息保存起来，以便后续进行分析、调试和重新处理。  
+Kafka 死信队列的基本思想是将处理失败的消息重新发送到一个特定的主题（通常称为 "死信主题" 或 "重试主题"），然后可以使用一些手段来处理这些消息，如重新消费、排查问题等。  
+
+以下是 Kafka 死信队列的一些常见用法和注意事项：  
+1. **消息重新消费：** 将死信队列中的消息重新发送回原始主题，以便重新消费。这可以在修复问题后重新处理失败的消息，确保数据的完整性。
+2. **问题排查：** 将死信队列中的消息保留下来，用于分析和排查消费失败的原因。可以从消息内容、消费者日志等方面来查找问题。
+3. **持久化存储：** 死信队列可以使用独立的主题来存储失败的消息，这样即使消费者出现问题，消息也能被保留下来，不会丢失。
+4. **重试策略：** 可以为死信队列设置不同的重试策略，例如延时重试、指数退避重试等，以尝试多次处理消息，提高成功率。
+5. **监控和告警：** 可以设置监控和告警机制，当死信队列中的消息数量达到一定阈值时，发出警报，以及时发现问题并采取措施。
+
+在 Kafka 中实现死信队列通常需要一些编码和配置工作，具体的实现方式可能因应用场景而异。通常来说，可以通过消费者拦截器、消息转发、自定义处理逻辑等方式来实现死信队列。需要根据实际情况来设计和配置，以确保消息处理的可靠性和容错性。  
+
+```java
+import org.apache.kafka.clients.consumer.*;
+import org.apache.kafka.clients.producer.*;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+
+import java.util.Collections;
+import java.util.Properties;
+
+public class KafkaDeadLetterQueueExample {
+  public static void main(String[] args) {
+    String sourceTopic = "source-topic";
+    String deadLetterTopic = "dead-letter-topic";
+
+    Properties consumerProps = new Properties();
+    consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+    consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "source-consumer-group");
+    consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+    consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+
+    Properties producerProps = new Properties();
+    producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+    producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+    producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+
+    // 创建消费者
+    Consumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
+    consumer.subscribe(Collections.singletonList(sourceTopic));
+
+    // 创建生产者
+    Producer<String, String> producer = new KafkaProducer<>(producerProps);
+
+    // 消费消息并处理
+    while (true) {
+      ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
+      for (ConsumerRecord<String, String> record : records) {
+        // 模拟消息处理失败
+        if (!process(record)) {
+          // 发送失败消息到死信主题
+          ProducerRecord<String, String> deadLetterRecord = new ProducerRecord<>(deadLetterTopic, record.key(), record.value());
+          producer.send(deadLetterRecord); // 另外写 consumer 订阅死信队列的主题另外处理这些事件
+        } else {
+          // 处理正常消息
+          System.out.println("Processed message: " + record.value());
+        }
+      }
+    }
+  }
+}
+```  
+将消息发送到死信队列后，通常会丢失原始主题信息，这可能会导致在处理死信消息时难以确定消息的来源。为了解决这个问题，通常可以采取以下几种方式：
+1. 添加元数据：在发送到死信队列的消息中，可以添加一些额外的元数据，如原始主题名称、分区信息、偏移量等。这样在处理死信消息时，仍然可以从元数据中恢复出原始消息的信息。
+2. 使用自定义头部属性：在发送消息到死信队列时，可以添加自定义的头部属性来存储原始主题信息。在处理死信消息时，可以从头部属性中获取原始主题信息。
+3. 重新组织消息格式：在发送到死信队列时，可以将消息格式进行重新组织，将原始主题信息和消息内容进行合并。处理死信消息时，可以根据消息格式来解析出原始主题信息。
+4. 使用特定的死信主题：为每个原始主题设置对应的死信主题，这样可以将死信消息发送到与原始主题相关的死信主题中。这样可以更容易地恢复消息的来源。
+
+无论采取哪种方式，重要的是确保在处理死信消息时能够准确地恢复出原始消息的信息，以便进行后续的处理和分析。具体的实现方式可以根据实际需求和应用架构来确定。  
 
 ## 创建 Producer/Consumer
 创建 KafkaConsumer 对象与创建 KafkaProducer 对象非常相似 —— 把想要传给实例的属性放在 Properties 对象里，属性入：bootstrap.servers、key.serializer/key.deserializer、value.serializer/value.deserializer、group.id(consumer only) etc。  
