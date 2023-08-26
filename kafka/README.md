@@ -28,6 +28,7 @@ Broker 设计简单所以容易 scale。
 每个分区在逻辑上是一个有序的消息队列，并且每个分区都有一个唯一的偏移量（Offset）来标识其中的消息。每个分区的消息在不同的 Broker 上进行存储和管理。  
 当创建一个主题时，可以指定分区的数量，Kafka 会根据分区数量自动将主题的不同分区分配到不同的 Broker 上。这种分区的分配通常使用一种算法来平衡负载，确保分区在不同的 Broker 上均匀分布。  
 因此，每个 Broker 上会包含多个主题的多个分区，但不同的 Broker 上的分区可能是不同的。每个 Broker 只存储分配给它的分区数据，而不是一个主题的所有分区。这样的设计使得 Kafka 能够实现高可用性、可扩展性和分布式处理。  
+![](./kafkas-architecture-illustrated-with-partitions-replicas-and-brokers.png)  
 
 Kafka 权威指南  
 > broker 和集群  
