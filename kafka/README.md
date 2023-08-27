@@ -14,10 +14,10 @@ Kafka 基于事件（Event）概念。
 每个主题（Topic）的消息有不同的分区，这样一方面消息的存储就不会受到单一服务器存储空间大小的限制，另一方面消息的处理也可以在多个服务器上并行。  
 
 ProducerRecord 对象包含了目标主题、键和值。Kafka 的消息是一个个键值对，ProducerRecord 对象可以只包含目标主题和值，键可以设置为默认的 null，不过大多数应用程序会用到键。键有两个用途：可以作为消息的附加信息，也可以用来决定消息该被写到主题的哪个分区（Partition）。拥有相同键的消息将被写到同一个分区。也就是说，如果一个进程只从一个主题的分区读取数据，那么具有相同键的所有记录都会被该进程读取。  
-如果键值为 null，并且使用了默认的分区器，那么记录将被随机地发送到主题内各个可用的分区上。分区器使用轮询（Round Robin）算法将消息均衡地分布到各个分区上。
+如果键值为 null，并且使用了默认的分区器，那么记录将被随机地发送到主题内各个可用的分区上。分区器使用轮询（Round Robin）算法将消息均衡地分布到各个分区上。  
 如果键不为空，并且使用了默认的分区器，那么 Kafka 会对键进行散列，然后根据散列值把消息映射到特定的分区上。这里的关键之处在于，同一个键总是被映射到同一个分区上。  
 只有在不改变主题分区数量的情况下，键与分区之间的映射才能保持不变。一旦主题增加了新的分区，这些就无法保证了 —— 旧数据仍然留在原分区，但新的记录可能被写到其他分区上。如果要使用键来映射分区，那么最好在创建主题的时候就把分区规划好，而且永远不要增加新分区。  
-Kafka 除了提供了默认分区器，使用者也可以实现自定义分区策略（自己写类 implements Partitioner）。  
+**Kafka 除了提供了默认分区器，使用者也可以实现自定义分区策略（自己写类 implements Partitioner）。**[注意分区策略会影响消费顺序。](./README.md#消费顺序)  
   
 ## Brokers
 Broker 即一个运行 Kafka broker 进程的机器 - 可以是服务器、计算机、实例或虚拟化容器。  
@@ -43,7 +43,7 @@ Kafka 权威指南
 
 如果一个副本无法与首领保持一致，在首领发生失效时，它就不可能成为新首领 —— 毕竟它没有包含全部的消息。相反，持续请求得到的最新消息副本被称为同步的副本。在首领发生失效时，只有同步副本才有可能被选为新首领。  
 
-![](./leader-follower-producer-consumer.png)
+![](./leader-follower-producer-consumer.png)  
   
 ## Producer
 即写入操作，通过轻量级的 Kafka Producer 库就可以进行（使用前进行正确配置即可，包括链接 Kafka 集群上的某几个 broker、安全设置、网络行为等等）。  
@@ -259,7 +259,7 @@ public class KafkaDeadLetterQueueExample {
   * It is a standalone server process external to broker, and it is mainly about maintain/store those schemas which allow Producer/Consumer to call its API to predict whether the about-to-be-produced-or-consumed message is compatible with previous versions (otherwise will fail it before produce/consume to prevent runtime failure).
   * Support format: JSON Schema, Avro, Protocol Buffers
 * Kafka Streams - consumer always grow/evolve more complex e.g. aggregation or enrichment which is stateful
-  * Stream API - i.e. The Funtional Java API Library (filtering, grouping, aggregating, joining etc) run in context of your application. It is shared stream processing workload, Kafka Streams prevents state from going down with your stream processing application (consumer group) when that occurs, because it persists the state.
+  * Stream API - i.e. The Funtional Java API Library (filtering, grouping, aggregating, joining etc) run in context of your application. It is shared stream processing workload, Kafka Streams prevents state from going down with your stream processing application (consumer group) when that occurs, because it persists the state. ![](./streams-architecture-overview.jpg)
 * ksqlDB - database severs run in another cluster (adjacent to kafka cluster)
   * A similar tool/replacement for Kafka Streams if need it
   * Provide REST API / Lib / Command Line to call, able to be hosted by docker container etc
@@ -315,7 +315,7 @@ Kafka 使用 Zookeeper 来管理和协调集群中的各种元数据，以及进
 4. **偏移量存储：** Kafka 使用 Zookeeper 来存储消费者（Consumer）的偏移量（Offset），以跟踪消费进度，确保数据不会被重复消费。
 5. **配置管理：** Kafka 的一些配置信息也会存储在 Zookeeper 中，包括 Broker 的配置、Topic 的配置等。
 
-需要注意的是，尽管 Kafka 目前使用 Zookeeper 来实现这些功能，但在未来的版本中，Kafka 计划逐步减少对 Zookeeper 的依赖，转而使用自己的内部元数据存储系统。这是为了简化 Kafka 的部署和管理，并减少对外部依赖的复杂性。  
+需要注意的是，尽管 Kafka 目前使用 Zookeeper 来实现这些功能，但在未来的版本中，Kafka 计划逐步减少对 Zookeeper 的依赖，转而使用自己的内部元数据存储系统 [KRaft Controller](https://developer.confluent.io/learn/kraft/)。这是为了简化 Kafka 的部署和管理，并减少对外部依赖的复杂性。  
 
 # Spring Boot Kafka 项目实例
 [Spring Boot Kafka 项目实例](https://github.com/yihaoye/spring-framework-example/tree/master/spring-boot-kafka)  
