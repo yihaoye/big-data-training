@@ -18,6 +18,16 @@ ProducerRecord 对象包含了目标主题、键和值。Kafka 的消息是一�
 如果键不为空，并且使用了默认的分区器，那么 Kafka 会对键进行散列，然后根据散列值把消息映射到特定的分区上。这里的关键之处在于，同一个键总是被映射到同一个分区上。  
 只有在不改变主题分区数量的情况下，键与分区之间的映射才能保持不变。一旦主题增加了新的分区，这些就无法保证了 —— 旧数据仍然留在原分区，但新的记录可能被写到其他分区上。如果要使用键来映射分区，那么最好在创建主题的时候就把分区规划好，而且永远不要增加新分区。  
 **Kafka 除了提供了默认分区器，使用者也可以实现自定义分区策略（自己写类 implements Partitioner）。**[注意分区策略会影响消费顺序。](./README.md#消费顺序)  
+
+### 物理存储
+Kafka 的基本存储单元是分区。分区的大小受到单个挂载点可用空间的限制。日志压缩是 Kafka 的一个高级特性，因为有了这个特性，Kafka 可以用来长时间地保存数据。  
+
+保留数据是 Kafka 的一个基本特性，Kafka 不会一直保留数据，也不会等到所有消费者都读取了消息之后才删除消息。相反，Kafka 管理员为每个主题配置了数据保留期限，规定数据被删除之前可以保留多长时间，或者清理数据之前可以保留的数据量大小。  
+在一个大文件里查找和删除消息是很费时的，也很容易出错，所以 Kafka 把分区分成若干个片段。  
+
+*索引*  
+*消费者可以从 Kafka 的任意可用偏移量位置开始读取消息。假设消费者要读取从偏移量 100 开始的 1MB 消息，那么 broker 必须立即定位到偏移量 100（可能是在分区的任意一个片段里），然后开始从这个位置读取消息。为了帮助 broker 更快地定位到指定的偏移量，Kafka 为每个分区维护了一个索引。索引把偏移量映射到片段文件和偏移量在文件里的位置。*  
+*索引也被分成片段，所以在删除消息时，也可以删除相应的索引。Kafka 不维护索引的校验和。如果索引出现损坏，Kafka 会通过重新读取消息并录制偏移量和位置来重新生成索引。如果有必要，管理员可以删除索引，这样做是绝对安全的，Kafka 会自动重新生成这些索引。*  
   
 ## Brokers
 Broker 即一个运行 Kafka broker 进程的机器 - 可以是服务器、计算机、实例或虚拟化容器。  
@@ -44,6 +54,8 @@ Kafka 权威指南
 如果一个副本无法与首领保持一致，在首领发生失效时，它就不可能成为新首领 —— 毕竟它没有包含全部的消息。相反，持续请求得到的最新消息副本被称为同步的副本。在首领发生失效时，只有同步副本才有可能被选为新首领。  
 
 ![](./leader-follower-producer-consumer.png)  
+
+并不是所有保存在分区首领上的数据都可以被客户端读取。大部分客户端只能读取已经被写入所有同步副本的消息（跟随者副本也不行，尽管它们也是消费者 —— 否则复制功能就无法工作）。分区首领知道每个消息会被复制到哪个副本上，在消息还没有被写入所有同步副本之前，是不会发送给消费者的 —— 尝试获取这些消息的请求会得到空的响应而不是错误。因为还没有被足够多副本复制的消息被认为是 “不安全” 的 —— 如果首领发生崩溃，另一个副本成为新首领，那么这些消息就丢失了。如果允许消费者读取这些消息，可能就会破坏一致性。  
   
 ## Producer
 即写入操作，通过轻量级的 Kafka Producer 库就可以进行（使用前进行正确配置即可，包括链接 Kafka 集群上的某几个 broker、安全设置、网络行为等等）。  
@@ -265,7 +277,14 @@ public class KafkaDeadLetterQueueExample {
   * Provide REST API / Lib / Command Line to call, able to be hosted by docker container etc
   * It is a new event streaming database optimized for building stream processing applications in which queries are defined in SQL. It performs continuous processing of event streams and exposes the results to applications like a database.
   * Can Integrate with Kafka Connect
-  
+
+## 流式处理
+Kafka 不仅为每一个流行的流式处理框架提供了可靠的数据来源，还提供了一个强大的流式处理类库，并将其作为客户端类库的一部分。这样，开发人员就可以在应用程序里读取、处理和生成事件，而不需要再依赖外部的处理框架。  
+什么是流式处理 - 首先，数据流是无边界数据集的抽象表示。无边界意味着无限和持续增长。无边界数据集之所以是无限的，是因为随着时间的推移，新的记录会不断加入进来。另外还有以下属性：  
+* 事件流是有序的
+* 不可变的数据记录
+* 事件流是可重播的
+
 ## 消费顺序
 在 Kafka 中，每个分区内的消息是有序的，但是不同分区之间的消息顺序是无法保证的。因此，当多个消费者同时消费多个分区时，可能会导致消息的顺序性问题。  
 即使是单个消费者实例，由于不同分区之间的消息顺序是无法保证的，所以无法绝对保证按照主题的全局顺序来消费消息。分区内的消息是有序的，但是不同分区之间的顺序可能有落差，特别是在存在多分区且并行消费的情况下。  
@@ -316,6 +335,20 @@ Kafka 使用 Zookeeper 来管理和协调集群中的各种元数据，以及进
 5. **配置管理：** Kafka 的一些配置信息也会存储在 Zookeeper 中，包括 Broker 的配置、Topic 的配置等。
 
 需要注意的是，尽管 Kafka 目前使用 Zookeeper 来实现这些功能，但在未来的版本中，Kafka 计划逐步减少对 Zookeeper 的依赖，转而使用自己的内部元数据存储系统 [KRaft Controller](https://developer.confluent.io/learn/kraft/)。这是为了简化 Kafka 的部署和管理，并减少对外部依赖的复杂性。  
+
+### 在云计算上部署 Kafka
+在 AWS 上部署 Kafka 可以通过多种方式进行，以下是一些常见的方法：  
+1. **Amazon Managed Streaming for Apache Kafka (Amazon MSK):** Amazon MSK 是 AWS 托管的 Kafka 服务，它简化了 Kafka 集群的管理和维护。可以通过 AWS 控制台或 AWS 命令行界面创建和管理 Amazon MSK 集群，然后使用标准的 Kafka 客户端连接和使用集群。
+2. **自托管 Kafka 集群：** 如果希望更加灵活地自定义 Kafka 集群的配置，可以选择在 EC2 实例上自己部署和管理 Kafka 集群。可以使用 Amazon EC2 实例来运行 Kafka Broker，使用 Amazon EBS 存储数据，使用 Amazon VPC 进行网络配置等。
+3. **Kubernetes 上部署 Kafka：** 还可以使用 Amazon EKS（Elastic Kubernetes Service）在 Kubernetes 集群中部署 Kafka。Kubernetes 可以帮助管理容器化的 Kafka 实例，提供弹性和伸缩性。
+
+无论选择哪种方法，都需要考虑以下几个步骤：
+1. **规划：** 确定 Kafka 集群的规模和配置，包括分区数量、副本数量、实例类型等。
+2. **网络配置：** 配置 Amazon VPC、子网、安全组等网络组件，以确保 Kafka 集群能够在 VPC 中运行并与其他资源通信。
+3. **存储配置：** 考虑使用 Amazon EBS 卷来存储 Kafka 数据，配置 EBS 卷的类型和大小。
+4. **安全性：** 配置适当的 IAM 角色、加密选项、访问控制策略等，以确保 Kafka 集群的安全性。
+5. **监控和日志：** 配置监控和日志记录，以便及时发现和解决问题。
+6. **备份和恢复：** 配置备份和恢复策略，确保数据的可靠性和可恢复性。
 
 # Spring Boot Kafka 项目实例
 [Spring Boot Kafka 项目实例](https://github.com/yihaoye/spring-framework-example/tree/master/spring-boot-kafka)  
