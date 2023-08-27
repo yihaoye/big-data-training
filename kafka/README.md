@@ -266,7 +266,10 @@ public class KafkaDeadLetterQueueExample {
   * It is a new event streaming database optimized for building stream processing applications in which queries are defined in SQL. It performs continuous processing of event streams and exposes the results to applications like a database.
   * Can Integrate with Kafka Connect
   
-## Kafka 设置
+## 消费顺序
+在 Kafka 中，每个分区内的消息是有序的，但是不同分区之间的消息顺序是无法保证的。因此，当多个消费者同时消费多个分区时，可能会导致消息的顺序性问题。  
+即使是单个消费者实例，由于不同分区之间的消息顺序是无法保证的，所以无法绝对保证按照主题的全局顺序来消费消息。分区内的消息是有序的，但是不同分区之间的顺序可能有落差，特别是在存在多分区且并行消费的情况下。  
+
 可以设置为严格保证写入顺序，但是会牺牲一点性能，所以要注意使用场景来选择适用的设置。  
 
 针对消息有序的业务需求，还分为全局有序和局部有序。
@@ -278,7 +281,15 @@ public class KafkaDeadLetterQueueExample {
 因此要满足全局有序，需要 1 个 Topic 只能对应 1 个 Partition。而且对应的 consumer 也要使用单线程或者保证消费顺序的线程模型，否则会出现消费端造成的消费乱序。  
 
 局部有序  
-要满足局部有序，只需要在发消息的时候指定 Partition Key，Kafka 对其进行 Hash计算，根据计算结果决定放入哪个 Partition。这样 Partition Key 相同的消息会放在同一个 Partition。此时，Partition 的数量仍然可以设置多个，提升 Topic 的整体吞吐量。  
+要满足局部有序，只需要在发消息的时候指定 Partition Key，Kafka 对其进行 Hash 计算，根据计算结果决定放入哪个 Partition。这样 Partition Key 相同的消息会放在同一个 Partition。此时，Partition 的数量仍然可以设置多个，提升 Topic 的整体吞吐量。  
+也即可以保证具有相同 Key 的消息总体上被顺序读取。在同一个分区内，消息是有序的，因此具有相同 Key 的消息会在同一个分区内按顺序被消费。虽然不同分区之间的消息顺序无法保证，但是对于具有相同 Key 的消息来说，它们会被分配到同一个分区内，从而保证了这些消息在该分区内的顺序性。  
+可以实现该有序的 Key 分区策略有：
+* Hash（哈希）：根据消息的键进行哈希运算，然后将哈希结果映射到某个分区，从而将具有相同键的消息分配到同一个分区。
+* Custom（自定义）：允许用户根据自己的业务逻辑自定义分区策略，实现灵活的分区控制。
+* Sticky（粘性）：在消费者组内，每个消费者被分配到特定的分区，然后尽可能消费这些分区，避免频繁的分区重新分配。
+
+以下策略连局部有序也无法保证：
+* Round-robin（轮询）：默认的分区策略，依次将消息分配到不同的分区，实现负载均衡。
 
 以上参考：https://cloud.tencent.com/developer/article/1839597  
 
