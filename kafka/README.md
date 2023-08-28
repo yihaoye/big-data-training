@@ -343,6 +343,8 @@ Kafka 有两个基于流的 API，一个是底层的 Processor API，一个是�
 以下策略连局部有序也无法保证：
 * Round-robin（轮询）：默认的分区策略，依次将消息分配到不同的分区，实现负载均衡。
 
+![](./kafka-consumer-threads.png)  
+
 以上参考：https://cloud.tencent.com/developer/article/1839597  
 
 ### 序列化器/反序列化器
