@@ -270,6 +270,18 @@ public class KafkaDeadLetterQueueExample {
 
 无论采取哪种方式，重要的是确保在处理死信消息时能够准确地恢复出原始消息的信息，以便进行后续的处理和分析。具体的实现方式可以根据实际需求和应用架构来确定。  
 
+#### [AWS - 什么是死信队列（DLQ）？](https://aws.amazon.com/cn/what-is/dead-letter-queue/?nc1=h_ls)
+何时应该使用死信队列？如果系统存在以下问题，则可以使用死信队列（DLQ）。 
+* 无序队列 - 当应用程序不依赖于排序时，可以利用 DLQ。虽然 DLQ 可以帮助对错误的消息传输操作进行故障排除，但应继续监控队列，并重新发送失败的消息。 
+* FIFO 队列 - 消息排序在先入先出（FIFO）队列中非常重要。必须处理每一条消息，然后才能传递下一条消息。可以将死信队列与 FIFO 队列配合使用，但 DLQ 实施也应该是 FIFO。
+
+何时不应使用死信队列？  
+* 当希望能够无限期地继续重试传输消息时，不应将死信队列（DLQ）与无序队列配合使用。例如，如果程序必须等待某一依存过程变为活动或可用状态，则不要使用死信队列。 
+* 同样，如果不想打破消息或操作的确切顺序，则不应将先入先出（FIFO）队列与死信队列配合使用。例如，不要将死信队列与视频编辑套件编辑决策列表（EDL）中的指令配合使用。在此实例中，通过更改编辑顺序，将会更改后续编辑的上下文。
+
+死信队列的工作原理是什么？  
+在大多数情况下，死信队列（DLQ）的工作方式与普通消息队列相似。它会存储错误的消息，直到工程师对其进行处理以调查错误原因为止。  
+
 ## 创建 Producer/Consumer
 创建 KafkaConsumer 对象与创建 KafkaProducer 对象非常相似 —— 把想要传给实例的属性放在 Properties 对象里，属性入：bootstrap.servers、key.serializer/key.deserializer、value.serializer/value.deserializer、group.id(consumer only) etc。  
   
