@@ -428,5 +428,11 @@ A：如果单个服务器无法满足要求，可以将 Kafka 消费者组分布
 
 by ChatGPT  
 
+## 清理
+为了清理分区，清理线程会读取分区的污浊部分，并在内存里创建一个 map。map 里的每个元素包含了消息键的散列值和消息的偏移量。  
+
+## 事件删除
+把一个键从系统里删除，应用程序必须发送一个包含该键且值为 null 的消息。清理线程发现该消息时，会先进行常规的清理，只保留值为 null 的消息。该消息（被称为墓碑消息）会被保留一段时间，时间长短是可配置的。  
+
 # Spring Boot Kafka 项目实例
 [Spring Boot Kafka 项目实例](https://github.com/yihaoye/spring-framework-example/tree/master/spring-boot-kafka)  
