@@ -449,5 +449,9 @@ Kafka 中的 ACL 模块是以插件化的形式存在的，除了自带默认的
 
 https://cloud.tencent.com/developer/article/2229285  
 
+## 授权认证
+Kafka 本身并不直接提供认证（Authentication）功能，但它通常与其他系统集成，以实现身份验证。  
+SASL 是一种用于进行身份验证的标准协议。Kafka 可以与各种 SASL 机制集成，例如 Kerberos，PLAIN，SCRAM 等。通过配置 SASL，Kafka 可以强制要求客户端提供有效的凭据（如用户名和密码）来进行身份验证。Kafka 还可以与 Kerberos 集成，以实现强大的身份验证和访问控制。  
+
 # Spring Boot Kafka 项目实例
 [Spring Boot Kafka 项目实例](https://github.com/yihaoye/spring-framework-example/tree/master/spring-boot-kafka)  
