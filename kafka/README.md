@@ -434,5 +434,20 @@ by ChatGPT
 ## 事件删除
 把一个键从系统里删除，应用程序必须发送一个包含该键且值为 null 的消息。清理线程发现该消息时，会先进行常规的清理，只保留值为 null 的消息。该消息（被称为墓碑消息）会被保留一段时间，时间长短是可配置的。  
 
+## Kafka 的访问控制
+多用户使用同一套 kafka 集群，各自使用不同的 topic。在这种场景下，一般不希望不同的用户能访问彼此的数据，因此需要进行权限控制，这就会用到 Kafka 中的 ACL。  
+Kafka 中的 ACL 定义为：来自指定主机（Host）的指定用户（User）对任意资源（Resource）如包括主题（Topic）、消费者组、集群、事务以及委派 token（DelegationToken）的操作是否符合指定的资源模式（ResourcePattern）。默认情况下是不开启的，通过在配置文件中增加如下配置项，则启用了 Kafka 的 ACL 机制。  
+```
+authorizer.class.name=kafka.security.auth.SimpleAclAuthorizer
+```  
+Kafka 中的 ACL 模块是以插件化的形式存在的，除了自带默认的实现外，可以较容易的引入外部插件实现权限控制，例如 ranger、santry。  
+如果需要允许该用户在指定 topic 上进行消费，除了需要为 topic 资源配置 ACL 以外，还需要为 group 配置资源。kafka 为了简化操作，在 kafka-acls.sh 脚本中提供了 "--consumer" 参数，通过该参数会自动对 topic 与 group 进行配置，同样还包括 "--producer" 参数。  
+
+通过 "kafka-acls.sh" 脚本增加删除 ACL 的操作，本质是与 ACL 进行交互，并将信息写入对应的 znode 中，也就是说 kafka 的 acl 信息是存储在 zookeeper 中的。  
+具体为指定根节点下，名为 kafka-acl 的 znode，在这个下面分别存储了 Topic、Group、Cluster 等资源的 ACL 信息。  
+而 kafka broker 则 watch 该节点，以检测 acl 的新增删除等变更情况。一旦监测到 acl 有变更，重新从 zookeeper 中读取资源的 acl 信息，并更新内存中的记录信息。此后，客户端进行生产消费时则可以进行权限校验。  
+
+https://cloud.tencent.com/developer/article/2229285  
+
 # Spring Boot Kafka 项目实例
 [Spring Boot Kafka 项目实例](https://github.com/yihaoye/spring-framework-example/tree/master/spring-boot-kafka)  
