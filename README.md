@@ -1,6 +1,7 @@
 # big-data-training
   
 * [Kafka](./kafka/README.md)
+* [Flink](./flink/README.md)
 * [Scala](./scala/) (Demo or mini project about big data, basically written in Scala)
   
 ## 参考资料
