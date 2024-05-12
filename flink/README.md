@@ -76,3 +76,48 @@ wordCounts.print();
 
 env.execute("Word Count Example");
 ```  
+
+
+### Go 示例
+* DataStream API（流数据 API）：
+  * 是 Flink 中用于处理流式数据的核心 API。它提供了丰富的操作符和函数，用于对流数据进行转换、聚合、过滤、连接等操作。
+  * 允许开发人员定义流式计算任务，包括实时数据处理、事件驱动的应用程序、复杂事件处理等。
+  * 支持事件时间和处理时间两种时间模式，并提供了窗口操作、水位线等机制来处理乱序事件。
+
+```go
+package main
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/apache/flink-statefun/go/flink"
+)
+
+func main() {
+	// 创建流处理执行环境
+	env := flink.NewStreamExecutionEnvironment()
+	// 输入数据流
+	streamText := env.FromElements(
+		"To be, or not to be, that is the question",
+		"Whether 'tis nobler in the mind to suffer",
+		"The slings and arrows of outrageous fortune",
+	)
+	// 使用 DataStream API 实现单词计数
+	streamCounts := streamText.FlatMap(tokenizer).KeyBy(0).Sum(1)
+	// 打印结果
+	streamCounts.Print()
+	// 执行程序
+	env.Execute("WordCount Streaming Job")
+}
+
+// tokenizer 函数用于将输入的字符串切分为单词，并输出 (单词, 1) 的键值对
+func tokenizer(value string, out *flink.Collector) {
+	words := strings.Fields(value)
+	for _, word := range words {
+		out.Collect(flink.Tuple{word, 1})
+	}
+}
+```
+使用 DataStream API 从流式数据中实时统计单词出现的次数。  
+实现了一个 Tokenizer 函数，用于将输入的字符串切分为单词，并使用 flatMap 操作符生成 (单词, 1) 的键值对。然后，使用 groupBy 和 sum 操作符对单词进行分组和计数。最后，打印出计数结果，并通过 execute 方法执行程序。  
